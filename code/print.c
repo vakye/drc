@@ -13,6 +13,8 @@ static usize print_ssize(ssize value);
 
 static usize print_f64(f64 value);
 
+static usize right_pad(usize written, usize padding);
+
 typedef usize print_write_out(void* data, usize size);
 
 struct print_context {
@@ -145,6 +147,14 @@ static usize print_f64(f64 value)
 
         written += print_usize(digit);
     }
+
+    return (written);
+}
+
+static usize right_pad(usize written, usize padding)
+{
+    while (written < padding)
+        written += print_char(' ');
 
     return (written);
 }

@@ -18,6 +18,7 @@ CompileFlags=" \
     -Wno-unused-parameter \
     -Wno-unused-variable \
     -Wno-unused-function \
+    -Wno-switch \
     -o $OutputFile"
 
 LinkFlags=" \

@@ -4,13 +4,14 @@
 #include "arena.c"
 #include "lexer.c"
 #include "parser.c"
+#include "ir.c"
 
 s32 main(void)
 {
     f64 begin_ms = platform_ms_ticked();
 
     struct arena* arena = make_arena(mb(1), gb(64));
-    struct string code = str("120 / 2*(10 + 10 - 5)) % 7");
+    struct string code = str("120 / 2*(10 + 10 - 5) % 7;");
 
     struct lexed_context lexed = {0};
     b32 tokenized_okay = tokenize_entire_str(arena, code, &lexed);
@@ -38,6 +39,18 @@ s32 main(void)
         print_node(parsed.root_node);
     }
     else return (1);
+
+    struct ir_inst_block inst_block = {0};
+    b32 ir_okay = ir_generate(arena, &parsed, &inst_block);
+    if (ir_okay)
+    {
+        print_use_stdout();
+        print(str("ir output: (retval_id = "));
+        print_ir_inst_id(inst_block.retval_id, 0);
+        print(str(")"));
+        print_newline();
+        print_ir_inst_block(&inst_block);
+    }
 
     delete_all_arenas();
 
