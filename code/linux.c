@@ -14,6 +14,7 @@ enum linux_syscall_nr {
     LINUX_SYSCALL_NR_WRITE      = 1,
     LINUX_SYSCALL_NR_MMAP       = 9,
     LINUX_SYSCALL_NR_MPROTECT   = 10,
+    LINUX_SYSCALL_NR_MUNMAP     = 11,
     LINUX_SYSCALL_NR_EXIT       = 60,
 };
 
@@ -64,6 +65,9 @@ static usize linux_syscall(
 #define mprotect(addr, size, prot_flags) \
     (ssize)linux_syscall(LINUX_SYSCALL_NR_MPROTECT, (usize)(addr), size, prot_flags, 0, 0, 0)
 
+#define munmap(addr, size) \
+    (ssize)linux_syscall(LINUX_SYSCALL_NR_MUNMAP, (usize)(addr), size, 0, 0, 0, 0)
+
 #define exit(code) \
     linux_syscall(LINUX_SYSCALL_NR_EXIT, code, 0, 0, 0, 0, 0)
 
@@ -98,6 +102,12 @@ static b32 platform_commit_mem(void* mem, usize size)
 
     b32 okay = (commit_result >= 0);
     return (okay);
+}
+
+static void platform_release_mem(void* mem, usize reserved_size)
+{
+    if (mem && reserved_size)
+        munmap(mem, reserved_size);
 }
 
 static void platform_exit(u8 code)

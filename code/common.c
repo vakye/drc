@@ -21,3 +21,45 @@ typedef u32 b32;
 #define true (1)
 #define false (0)
 
+#define kb(amount) ((ssize)(amount) << 10)
+#define mb(amount) ((ssize)(amount) << 20)
+#define gb(amount) ((ssize)(amount) << 30)
+#define tb(amount) ((ssize)(amount) << 40)
+
+#define align_up(value, power_of_2) (((value) + (power_of_2) - 1) & ~((power_of_2) - 1))
+
+void* memset(void* dest_init, s32 byte, usize size)
+{
+    u8* dest = (u8*)dest_init;
+    while (size--)
+        *dest++ = (u8)byte;
+
+    return (dest_init);
+}
+
+void* memcpy(void* dest_init, void* source_init, usize size)
+{
+    u8* dest = (u8*)dest_init;
+    u8* source = (u8*)source_init;
+
+    while (size--)
+        *dest++ = *source++;
+
+    return (dest_init);
+}
+
+#define zero_type(pointer)          zero_mem(pointer, sizeof(*(pointer)))
+#define zero_arr(pointer, count)    zero_mem(pointer, sizeof(*(pointer)) * (count))
+
+static void zero_mem(void* dest_init, usize size)                       { memset(dest_init, 0, size); }
+static void fill_mem(void* dest_init, u8 byte, usize size)              { memset(dest_init, byte, size); }
+static void copy_mem(void* dest_init, void* source_init, usize size)    { memcpy(dest_init, source_init, size); }
+
+struct string {
+    char* data;
+    usize size;
+};
+
+#define str(literal)            (struct string){literal, sizeof(literal) - 1}
+#define str_data(data, size)    (struct string){data, size}
+
