@@ -16,9 +16,15 @@ struct token {
 };
 
 struct lexed_context {
+    struct string   code;
     struct token*   tokens;
     usize           token_count;
 };
+
+static usize token_to_integer(struct lexed_context* lexed, struct token* tok);
+
+static void error_at_line_prefix(usize line_index);
+static void error_at_token(struct token* tok, struct string msg);
 
 static void tokenize_digit  (struct string code, struct token* tok);
 static void tokenize_ident  (struct string code, struct token* tok);
@@ -35,11 +41,15 @@ static b32 tokenize_entire_str(
     struct string           code,
     struct lexed_context*   result)
 {
+    if (code.size == 0)
+        return (false);
+
     b32 okay = true;
 
     zero_type(result);
 
-    result->tokens = arena_alloc_at(allocator);
+    result->code        = code;
+    result->tokens      = arena_alloc_at(allocator);
     result->token_count = 0;
 
     usize line_index = 0;
@@ -62,6 +72,7 @@ static b32 tokenize_entire_str(
 
         current_tok.kind = TOKEN_KIND_EOF;
         current_tok.from = lex_at;
+        current_tok.line_index = line_index;
 
         if (lex_at < code.size)
         {
@@ -72,11 +83,7 @@ static b32 tokenize_entire_str(
             else if (is_punct(c))           tokenize_punct(code, &current_tok);
             else
             {
-                print_use_stderr    ();
-                print_error_label   ();
-                print               (str("line "));
-                print_usize         (line_index + 1); print_char(':');
-                print_char          (' ');
+                error_at_line_prefix(line_index);
                 print               (str("unknown character utf("));
                 print_hex           ((u8)c);
                 print_char          (')');
@@ -101,6 +108,35 @@ static b32 tokenize_entire_str(
     return (okay);
 }
 
+static usize token_to_integer(struct lexed_context* lexed, struct token* tok)
+{
+    struct string token_str = str_view(lexed->code, tok->from, tok->size);
+
+    usize result = 0;
+    for (usize index = 0; index < token_str.size; index++)
+    {
+        result *= 10;
+        result += (token_str.data[index] - '0');
+    }
+
+    return (result);
+}
+
+static void error_at_line_prefix(usize line_index)
+{
+    print_use_stderr    ();
+    print_error_label   ();
+    print               (str("line "));
+    print_usize         (line_index + 1); print_char(':');
+    print_char          (' ');
+}
+
+static void error_at_token(struct token* tok, struct string msg)
+{
+    error_at_line_prefix(tok->line_index);
+    println(msg);
+}
+
 static void tokenize_digit(struct string code, struct token* tok)
 {
     tok->kind = TOKEN_KIND_INTEGER;
@@ -119,7 +155,7 @@ static void tokenize_digit(struct string code, struct token* tok)
 
 static void tokenize_ident(struct string code, struct token* tok)
 {
-    tok->kind = TOKEN_KIND_INTEGER;
+    tok->kind = TOKEN_KIND_IDENTIFIER;
     usize lex_at = 1 + tok->from;
 
     while (lex_at < code.size)
