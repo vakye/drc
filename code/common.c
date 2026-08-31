@@ -63,3 +63,8 @@ struct string {
 #define str(literal)            (struct string){literal, sizeof(literal) - 1}
 #define str_data(data, size)    (struct string){data, size}
 
+static struct string str_view(struct string source, usize from, usize size)
+{
+    struct string result = str_data(source.data + from, size);
+    return (result);
+}
