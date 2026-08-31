@@ -14,7 +14,7 @@ s32 main(void)
     f64 begin_ms = platform_ms_ticked();
 
     struct arena* arena = make_arena(mb(1), gb(64));
-    struct string code = str("10;");
+    struct string code = str("10 + 10 + 10 + 10 - 2 - 8;");
 
     struct lexed_context lexed = {0};
     b32 tokenized_okay = tokenize_entire_str(arena, code, &lexed);

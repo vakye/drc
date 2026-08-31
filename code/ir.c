@@ -14,11 +14,14 @@ enum ir_opcode {
 
 typedef u32 ir_inst_id;
 
+#define IR_INVALID_INST_ID (U32_MAX)
+
 struct ir_inst {
     enum ir_opcode opcode;
     union
     {
         struct { usize imm; };
+        struct { ir_inst_id operand; };
         struct { ir_inst_id left, right; };
     };
 };
@@ -43,10 +46,11 @@ static b32 ir_generate(
     zero_type(result);
     result->insts = arena_alloc_at(allocator);
 
-    ir_generate_node(allocator, parsed->root_node, result);
+    ir_inst_id retval_id = ir_generate_node(allocator, parsed->root_node, result);
 
     struct ir_inst* inst = ir_push_inst(allocator, result);
     inst->opcode = IR_RET;
+    inst->operand = retval_id;
 
     return (true);
 }

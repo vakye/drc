@@ -21,6 +21,8 @@ typedef u32 b32;
 #define true (1)
 #define false (0)
 
+#define U32_MAX ((u32)(0xFFFFFFFF))
+
 #define kb(amount) ((ssize)(amount) << 10)
 #define mb(amount) ((ssize)(amount) << 20)
 #define gb(amount) ((ssize)(amount) << 30)
