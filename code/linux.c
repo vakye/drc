@@ -120,6 +120,17 @@ static void* platform_reserve_mem(usize size)
     return (result);
 }
 
+static void* platform_alloc_exec(usize size)
+{
+    ssize map_result = (ssize)mmap(0, size, PROT_EXEC|PROT_READ|PROT_WRITE, MAP_PRIVATE|MAP_ANONYMOUS, -1, 0);
+
+    void* result = 0;
+    if (map_result > 0)
+        result = (void*)map_result;
+
+    return (result);
+}
+
 static b32 platform_commit_mem(void* mem, usize size)
 {
     ssize commit_result = mprotect(mem, size, PROT_READ|PROT_WRITE);

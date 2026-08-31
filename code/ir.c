@@ -7,6 +7,7 @@ enum ir_opcode {
     IR_IMUL,
     IR_IDIV,
     IR_IMOD,
+    IR_RET,
 
     IR_OPCODE_COUNT,
 };
@@ -25,7 +26,6 @@ struct ir_inst {
 struct ir_inst_block {
     struct ir_inst* insts;
     u32             inst_count;
-    ir_inst_id      retval_id;
 };
 
 static b32              ir_generate_node    (struct arena* allocator, struct node* node, struct ir_inst_block* result);
@@ -43,7 +43,11 @@ static b32 ir_generate(
     zero_type(result);
     result->insts = arena_alloc_at(allocator);
 
-    result->retval_id = ir_generate_node(allocator, parsed->root_node, result);
+    ir_generate_node(allocator, parsed->root_node, result);
+
+    struct ir_inst* inst = ir_push_inst(allocator, result);
+    inst->opcode = IR_RET;
+
     return (true);
 }
 
@@ -124,6 +128,7 @@ static void print_ir_inst(struct ir_inst* inst)
         ir_do_opcode_name(IMUL),
         ir_do_opcode_name(IDIV),
         ir_do_opcode_name(IMOD),
+        ir_do_opcode_name(RET),
 
         #undef ir_do_opcode_name
     };

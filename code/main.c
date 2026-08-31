@@ -5,13 +5,16 @@
 #include "lexer.c"
 #include "parser.c"
 #include "ir.c"
+#include "x64.c"
+
+typedef ssize asm_probe_func(void);
 
 s32 main(void)
 {
     f64 begin_ms = platform_ms_ticked();
 
     struct arena* arena = make_arena(mb(1), gb(64));
-    struct string code = str("120 / 2*(10 + 10 - 5) % 7;");
+    struct string code = str("10;");
 
     struct lexed_context lexed = {0};
     b32 tokenized_okay = tokenize_entire_str(arena, code, &lexed);
@@ -45,12 +48,24 @@ s32 main(void)
     if (ir_okay)
     {
         print_use_stdout();
-        print(str("ir output: (retval_id = "));
-        print_ir_inst_id(inst_block.retval_id, 0);
-        print(str(")"));
-        print_newline();
+        println(str("ir output: "));
         print_ir_inst_block(&inst_block);
     }
+
+    struct x64_context code_ctx = {0};
+    x64_generate(arena, &inst_block, &code_ctx);
+
+    void* executable_mem = platform_alloc_exec(code_ctx.size);
+    copy_mem(executable_mem, code_ctx.base, code_ctx.size);
+
+    asm_probe_func* probe = (asm_probe_func*)executable_mem;
+    ssize returned = probe();
+
+    print(str("run result: "));
+    print_ssize(returned);
+    print_newline();
+
+    platform_release_mem(executable_mem, code_ctx.size);
 
     delete_all_arenas();
 

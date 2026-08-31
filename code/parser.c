@@ -156,6 +156,10 @@ static b32 parse_primary(struct arena* allocator, struct lexed_context* lexed, s
         }
         else parse_next_tok(lexed, parsed);
     }
+    else if (tok->kind == ';')
+    {
+        // NOTE(vak): ignore
+    }
     else
     {
         parse_error_here(lexed, parsed, str("syntax error"));
