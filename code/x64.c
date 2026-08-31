@@ -65,6 +65,34 @@ static enum x64_reg64 x64_get_reg_encoding(x64_reg_desc_id id)
     return (result);
 }
 
+static x64_reg_desc_id x64_get_reg_desc_mapping(enum x64_reg64 reg_encoding)
+{
+    static x64_reg_desc_id table[16] =
+    {
+        [x64_RAX] = 0,
+        [x64_RCX] = 1,
+        [x64_RDX] = 2,
+        [x64_RBX] = x64_INVALID_REG_DESC_ID,
+        [x64_RSP] = x64_INVALID_REG_DESC_ID,
+        [x64_RBP] = x64_INVALID_REG_DESC_ID,
+        [x64_RSI] = 3,
+        [x64_RDI] = 4,
+        [x64_R8 ] = 5,
+        [x64_R9 ] = 6,
+        [x64_R10] = 7,
+        [x64_R11] = 8,
+        [x64_R12] = x64_INVALID_REG_DESC_ID,
+        [x64_R13] = x64_INVALID_REG_DESC_ID,
+        [x64_R14] = x64_INVALID_REG_DESC_ID,
+        [x64_R15] = x64_INVALID_REG_DESC_ID,
+    };
+
+    x64_reg_desc_id result = table[reg_encoding];
+    ensure(result != x64_INVALID_REG_DESC_ID, str("no reg desc available for x64 register"));
+
+    return (result);
+}
+
 static x64_reg_desc_id x64_find_reg_holding_inst(struct x64_context* ctx, struct ir_inst_block* block, ir_inst_id inst_id)
 {
     x64_reg_desc_id reg_desc_id = x64_INVALID_REG_DESC_ID;
@@ -212,6 +240,7 @@ static void x64_generate(struct arena* allocator, struct ir_inst_block* block, s
 
             case IR_ADD:
             case IR_SUB:
+            case IR_IMUL:
             {
                 ir_inst_id left_id = inst->left;
                 ir_inst_id right_id = inst->right;
@@ -232,22 +261,34 @@ static void x64_generate(struct arena* allocator, struct ir_inst_block* block, s
                     x64_load_inst_into_r64(result, right_reg, block->insts + right_id);
                 }
 
-                // IR_ADD   -> [rex 03 modrm]: add left_reg, right_reg
-                // IR_SUB   -> [rex 2b modrm]: sub left_reg, right_reg
+                // IR_ADD   -> [rex 03 modrm]:    add  left_reg, right_reg  (r64, r/m64)
+                // IR_SUB   -> [rex 2b modrm]:    sub  left_reg, right_reg  (r64, r/m64)
+                // IR_IMUL  -> [rex 0f af modrm]: imul left_reg, right_reg  (r64, r/m64)
                 {
                     enum x64_reg64 dst_encoding = x64_get_reg_encoding(left_reg);
                     enum x64_reg64 src_encoding = x64_get_reg_encoding(right_reg);
-
-                    u32 instruction = (inst->opcode == IR_ADD) ? 0xc00348 : 0xc02b48;
 
                     u32 rex_r       = (dst_encoding & 0x8) >> 1;    // REX.R for extended regs on dest operand (r8 and above)
                     u32 rex_b       = (src_encoding & 0x8) >> 3;    // REX.B for extended regs on source operand (r8 and above)
                     u32 modrm_reg   = (dst_encoding & 0x7) << 19;   // ModRM.reg (dest operand)
                     u32 modrm_rm    = (src_encoding & 0x7) << 16;   // ModRM.rm  (source operand)
 
-                    instruction += (rex_r + rex_b) + (modrm_reg + modrm_rm);   
+                    if (inst->opcode != IR_IMUL)
+                    {
+                        u32 instruction = (inst->opcode == IR_ADD) ? 0xc00348 : 0xc02b48;
+                        instruction += (rex_r + rex_b) + (modrm_reg + modrm_rm);   
+                        x64_emit24(result, instruction);
+                    }
+                    else
+                    {
+                        // NOTE(vak): Additional opcode byte 0x0f means modrm now resides on 4th byte
+                        modrm_reg <<= 8;
+                        modrm_rm  <<= 8;
 
-                    x64_emit24(result, instruction);
+                        u32 instruction = 0xc0af0f48;
+                        instruction += (rex_r + rex_b) + (modrm_reg + modrm_rm);   
+                        x64_emit32(result, instruction);
+                    }
                 }
 
                 x64_change_reg_owner(result, left_reg, id);
@@ -261,14 +302,16 @@ static void x64_generate(struct arena* allocator, struct ir_inst_block* block, s
                 ir_inst_id retval_id = inst->operand;
                 struct ir_inst* retval_inst = block->insts + retval_id;
 
+                x64_reg_desc_id ret_reg = x64_get_reg_desc_mapping(x64_RAX);
+
                 x64_reg_desc_id reg_desc_id = x64_find_reg_holding_inst(result, block, retval_id);
                 if (reg_desc_id == x64_INVALID_REG_DESC_ID)
                 {
-                    x64_load_inst_into_r64(result, 0, retval_inst);
-                    reg_desc_id = 0;
+                    x64_load_inst_into_r64(result, ret_reg, retval_inst);
+                    reg_desc_id = ret_reg;
                 }
 
-                x64_move_r64_r64(result, 0, reg_desc_id);
+                x64_move_r64_r64(result, ret_reg, reg_desc_id);
 
                 // c3 ret
                 x64_emit8(result, 0xc3);
