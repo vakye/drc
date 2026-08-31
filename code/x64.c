@@ -142,7 +142,7 @@ static x64_reg_desc_id x64_acquire_free_reg_for_inst(struct x64_context* ctx, ir
     for (u32 index = 0; index < x64_VOLATILE_REGISTER_COUNT; index++)
     {
         struct x64_reg_desc* desc = ctx->reg_descs + index;
-        if ((desc->holding_inst_id == x64_INVALID_REG_DESC_ID) || (desc->released))
+        if (desc->released)
         {
             reg_desc_id = index;
             desc->holding_inst_id = inst_id;
@@ -178,9 +178,10 @@ static void x64_load_r64_imm64(struct x64_context* ctx, x64_reg_desc_id reg_desc
 
     // [rex (b8 + reg) imm64]: mov reg, imm64
 
-    u16 instruction = 0xb848;
-    instruction += (reg_encoding >> 3);         // REX.B for extended regs (r8 and above)
-    instruction += (reg_encoding & 0x7) << 8;   // 0xb8 + reg
+    u16 rex_b  = (reg_encoding >> 3);       // REX.B for extended regs (r8 and above)
+    u16 op_reg = (reg_encoding & 0x7) << 8; // 0xb8 + reg
+
+    u16 instruction = 0xb848 + (rex_b + op_reg);
 
     x64_emit16(ctx, instruction);
     x64_emit64(ctx, imm64);
@@ -208,6 +209,28 @@ static void x64_move_r64_r64(struct x64_context* ctx, x64_reg_desc_id dst, x64_r
     x64_emit24(ctx, instruction);
 }
 
+static void x64_xchg_r64_r64(struct x64_context* ctx, x64_reg_desc_id dst, x64_reg_desc_id src)
+{
+    if (dst == src)
+        return;
+
+    enum x64_reg64 dst_encoding = x64_get_reg_encoding(dst);
+    enum x64_reg64 src_encoding = x64_get_reg_encoding(src);
+
+    // [rex 87 modrm] xchg dst, src
+
+    u32 instruction = 0xc08748;
+
+    u32 rex_r       = (dst_encoding & 0x8) >> 1;    // REX.R for extended regs on dest operand (r8 and above)
+    u32 rex_b       = (src_encoding & 0x8) >> 3;    // REX.B for extended regs on source operand (r8 and above)
+    u32 modrm_reg   = (dst_encoding & 0x7) << 19;   // ModRM.reg (dest operand)
+    u32 modrm_rm    = (src_encoding & 0x7) << 16;   // ModRM.rm  (source operand)
+
+    instruction += (rex_r + rex_b) + (modrm_reg + modrm_rm);   
+
+    x64_emit24(ctx, instruction);
+}
+
 static void x64_load_inst_into_r64(struct x64_context* ctx, x64_reg_desc_id dst, struct ir_inst* src_inst)
 {
     switch (src_inst->opcode)
@@ -218,6 +241,106 @@ static void x64_load_inst_into_r64(struct x64_context* ctx, x64_reg_desc_id dst,
     }
 }
 
+static x64_reg_desc_id x64_force_inst_into_rax_and_evict_rdx(struct x64_context* ctx, struct ir_inst_block* block, ir_inst_id inst_id)
+{
+    x64_reg_desc_id inst_reg_desc_id = x64_find_reg_holding_inst(ctx, block, inst_id);
+
+    x64_reg_desc_id rax_reg_desc_id = x64_get_reg_desc_mapping(x64_RAX);
+    x64_reg_desc_id rdx_reg_desc_id = x64_get_reg_desc_mapping(x64_RDX);
+
+    struct x64_reg_desc* rax_reg_desc = ctx->reg_descs + rax_reg_desc_id;
+    struct x64_reg_desc* rdx_reg_desc = ctx->reg_descs + rdx_reg_desc_id;
+    
+    b32 need_to_evict_rax = (rax_reg_desc->released == false) &&
+        ((inst_reg_desc_id == x64_INVALID_REG_DESC_ID) || (inst_reg_desc_id != rax_reg_desc_id));
+
+    b32 need_to_evict_rdx = (rdx_reg_desc->released == false);
+
+    x64_reg_desc_id evict_rax_to = x64_INVALID_REG_DESC_ID;
+    x64_reg_desc_id evict_rdx_to = x64_INVALID_REG_DESC_ID;
+
+    for (usize index = 0; index < x64_VOLATILE_REGISTER_COUNT; index++)
+    {
+        b32 everything_good =
+            ((!need_to_evict_rax) || (evict_rax_to != x64_INVALID_REG_DESC_ID)) &&
+            ((!need_to_evict_rdx) || (evict_rdx_to != x64_INVALID_REG_DESC_ID));
+
+        if (everything_good) break;
+
+        if (index == rax_reg_desc_id) continue;
+        if (index == rdx_reg_desc_id) continue;
+
+        struct x64_reg_desc* candidate = ctx->reg_descs + index;
+        if (!candidate->released) continue;
+
+        if (need_to_evict_rax)
+        {
+            if (evict_rax_to == x64_INVALID_REG_DESC_ID)
+            {
+                evict_rax_to = index;
+                continue;
+            }
+        }
+
+        if (need_to_evict_rdx)
+        {
+            if (evict_rdx_to == x64_INVALID_REG_DESC_ID)
+            {
+                evict_rdx_to = index;
+                continue;
+            }
+        }
+    }
+
+    if (inst_reg_desc_id == x64_INVALID_REG_DESC_ID)
+    {
+        if (need_to_evict_rax)
+        {
+            ensure(evict_rax_to != x64_INVALID_REG_DESC_ID, str("unable to evict rax. ran out of registers."));
+            x64_move_r64_r64(ctx, evict_rax_to, rax_reg_desc_id);
+            x64_change_reg_owner(ctx, evict_rax_to, rax_reg_desc->holding_inst_id);
+
+            struct x64_reg_desc* evict_dst = ctx->reg_descs + evict_rax_to;
+            evict_dst->released = false;
+        }
+
+        x64_load_inst_into_r64(ctx, rax_reg_desc_id, block->insts + inst_id);
+        x64_change_reg_owner(ctx, rax_reg_desc_id, inst_id);
+    }
+    else
+    {
+        if (need_to_evict_rax)
+        {
+            struct x64_reg_desc* inst_reg_desc = ctx->reg_descs + inst_reg_desc_id;
+
+            ir_inst_id temp = rax_reg_desc->holding_inst_id;
+
+            x64_change_reg_owner(ctx, rax_reg_desc_id, inst_id);
+            x64_change_reg_owner(ctx, inst_reg_desc_id, temp);
+
+            x64_xchg_r64_r64(ctx, rax_reg_desc_id, inst_reg_desc_id);
+        }
+        else
+        {
+            x64_move_r64_r64(ctx, rax_reg_desc_id, inst_reg_desc_id);
+            x64_change_reg_owner(ctx, rax_reg_desc_id, inst_id);
+        }
+    }
+
+    if (need_to_evict_rdx)
+    {
+        ensure(evict_rdx_to != x64_INVALID_REG_DESC_ID, str("unable to evict rdx. ran out of registers."));
+        x64_move_r64_r64(ctx, evict_rdx_to, rax_reg_desc_id);
+    }
+
+    x64_change_reg_owner(ctx, rdx_reg_desc_id, IR_INVALID_INST_ID);
+
+    rax_reg_desc->released = false;
+    rdx_reg_desc->released = false;
+
+    return (rax_reg_desc_id);
+}
+
 static void x64_generate(struct arena* allocator, struct ir_inst_block* block, struct x64_context* result)
 {
     zero_type(result);
@@ -226,8 +349,9 @@ static void x64_generate(struct arena* allocator, struct ir_inst_block* block, s
 
     for (u32 index = 0; index < x64_VOLATILE_REGISTER_COUNT; index++)
     {
-        struct x64_reg_desc* desc = result->reg_descs + index;
-        desc->holding_inst_id = IR_INVALID_INST_ID;
+        struct x64_reg_desc* desc   = result->reg_descs + index;
+        desc->holding_inst_id       = IR_INVALID_INST_ID;
+        desc->released              = true;
     }
 
     for (ir_inst_id id = 0; id < block->inst_count; id++)
@@ -295,6 +419,71 @@ static void x64_generate(struct arena* allocator, struct ir_inst_block* block, s
 
                 if (right_reg != left_reg)
                     x64_release_reg(result, right_reg);
+            } break;
+
+            case IR_IDIV:
+            case IR_IMOD:
+            {
+                ir_inst_id left_id = inst->left;
+                ir_inst_id right_id = inst->right;
+
+                // NOTE(vak): idiv instruction requires the left side to be put
+                // into RDX:RAX (128-bit value). Here, we force the left side into
+                // RAX (evicting old holding instruction to another register) followed
+                // with evicting RDX + sign extending RAX to RDX (cqo instruction).
+
+                x64_reg_desc_id left_reg = x64_force_inst_into_rax_and_evict_rdx(result, block, left_id);
+                x64_reg_desc_id right_reg = x64_find_reg_holding_inst(result, block, right_id);
+
+                if (right_reg == x64_INVALID_REG_DESC_ID)
+                {
+                    right_reg = x64_acquire_free_reg_for_inst(result, right_id);
+                    x64_load_inst_into_r64(result, right_reg, block->insts + right_id);
+                }
+
+                // NOTE(vak):
+                // [48 99]:             cqo
+                // [rex f7 (/7 modrm)]: idiv right_reg (r/m64)
+                //
+                //      rax = result    (IR_IDIV)
+                //      rcx = remainder (IR_IMOD)
+                {
+                    enum x64_reg64 src_encoding = x64_get_reg_encoding(right_reg);
+
+                    u32 rex_b       = (src_encoding & 0x8) >> 3;    // REX.B for extended regs on source operand (r8 and above)
+                    u32 modrm_rm    = (src_encoding & 0x7) << 16;   // ModRM.rm  (source operand)
+                    u32 instruction = 0xf8f748 + (rex_b + modrm_rm);
+
+                    x64_emit16(result, 0x9948);
+                    x64_emit24(result, instruction);
+                }
+
+                // NOTE(vak): idiv pollutes both RAX and RDX so we need to broadcast that
+
+                x64_change_reg_owner(result, x64_get_reg_desc_mapping(x64_RAX), IR_INVALID_INST_ID);
+                x64_change_reg_owner(result, x64_get_reg_desc_mapping(x64_RDX), IR_INVALID_INST_ID);
+
+                // NOTE(vak): Pick RAX or RDX if opcode is IR_IDIV or IR_IMOD respectively.
+
+                if (inst->opcode == IR_IDIV)
+                {
+                    // NOTE(vak): RAX is divison result, other regs can be released
+
+                    x64_release_reg(result, x64_get_reg_desc_mapping(x64_RDX));
+                    x64_change_reg_owner(result, left_reg, id);
+                    if (right_reg != left_reg)
+                        x64_release_reg(result, right_reg);
+                }
+                else
+                {
+                    // NOTE(vak): RDX is remainder, other regs can be released
+
+                    x64_release_reg(result, x64_get_reg_desc_mapping(x64_RAX));
+                    x64_change_reg_owner(result, x64_get_reg_desc_mapping(x64_RDX), id);
+
+                    if (right_reg != x64_get_reg_desc_mapping(x64_RDX))
+                        x64_release_reg(result, right_reg);
+                }
             } break;
 
             case IR_RET:
