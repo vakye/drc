@@ -10,7 +10,7 @@ s32 main(void)
     f64 begin_ms = platform_ms_ticked();
 
     struct arena* arena = make_arena(mb(1), gb(64));
-    struct string code = str("120 / 2*(10 + 10 - 5) % 7");
+    struct string code = str("120 / 2*(10 + 10 - 5)) % 7");
 
     struct lexed_context lexed = {0};
     b32 tokenized_okay = tokenize_entire_str(arena, code, &lexed);

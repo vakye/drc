@@ -28,6 +28,7 @@ struct parsed_context {
     usize           token_index;
 };
 
+static b32 parse_stmt       (struct arena* allocator, struct lexed_context* lexed, struct parsed_context* parsed, struct node** result);
 static b32 parse_expr       (struct arena* allocator, struct lexed_context* lexed, struct parsed_context* parsed, struct node** result);
 static b32 parse_sum        (struct arena* allocator, struct lexed_context* lexed, struct parsed_context* parsed, struct node** result);
 static b32 parse_factor     (struct arena* allocator, struct lexed_context* lexed, struct parsed_context* parsed, struct node** result);
@@ -42,7 +43,21 @@ static void             print_node(struct node* node);
 
 static b32 parse_root(struct arena* allocator, struct lexed_context* lexed, struct parsed_context*  parsed)
 {
-    b32 parse_okay = parse_expr(allocator, lexed, parsed, &parsed->root_node);
+    b32 parse_okay = parse_stmt(allocator, lexed, parsed, &parsed->root_node);
+    return (parse_okay);
+}
+
+static b32 parse_stmt(struct arena* allocator, struct lexed_context* lexed, struct parsed_context* parsed, struct node** result)
+{
+    b32 parse_okay = parse_expr(allocator, lexed, parsed, result);
+
+    if (parse_cur_tok(lexed, parsed)->kind != ';')
+    {
+        parse_error_here(lexed, parsed, str("expected ';' at end of statement"));
+        parse_okay = false;
+    }
+    else parse_next_tok(lexed, parsed);
+
     return (parse_okay);
 }
 
