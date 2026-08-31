@@ -182,18 +182,18 @@ static void print_node(struct node* node)
 {
     static struct string node_kind_names[] =
     {
-        #define DO_NODE_KIND_NAME(kind) \
+        #define do_node_kind_name(kind) \
             [NODE_KIND_##kind] = {#kind, sizeof(#kind) - 1}
 
-        DO_NODE_KIND_NAME(NIL),
-        DO_NODE_KIND_NAME(INTEGER),
-        DO_NODE_KIND_NAME(ADD),
-        DO_NODE_KIND_NAME(SUB),
-        DO_NODE_KIND_NAME(MUL),
-        DO_NODE_KIND_NAME(DIV),
-        DO_NODE_KIND_NAME(MOD),
+        do_node_kind_name(NIL),
+        do_node_kind_name(INTEGER),
+        do_node_kind_name(ADD),
+        do_node_kind_name(SUB),
+        do_node_kind_name(MUL),
+        do_node_kind_name(DIV),
+        do_node_kind_name(MOD),
 
-        #undef DO_NODE_KIND_NAME
+        #undef do_node_kind_name
     };
 
     static usize depth = 0;

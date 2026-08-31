@@ -11,11 +11,12 @@ void EntryPoint(void)
 }
 
 enum linux_syscall_nr {
-    LINUX_SYSCALL_NR_WRITE      = 1,
-    LINUX_SYSCALL_NR_MMAP       = 9,
-    LINUX_SYSCALL_NR_MPROTECT   = 10,
-    LINUX_SYSCALL_NR_MUNMAP     = 11,
-    LINUX_SYSCALL_NR_EXIT       = 60,
+    LINUX_SYSCALL_NR_WRITE              = 1,
+    LINUX_SYSCALL_NR_MMAP               = 9,
+    LINUX_SYSCALL_NR_MPROTECT           = 10,
+    LINUX_SYSCALL_NR_MUNMAP             = 11,
+    LINUX_SYSCALL_NR_EXIT               = 60,
+    LINUX_SYSCALL_NR_CLOCK_GETTIME      = 228,
 };
 
 #define STDOUT_FILENO (1)
@@ -28,6 +29,8 @@ enum linux_syscall_nr {
 
 #define MAP_PRIVATE     (0x02)
 #define MAP_ANONYMOUS   (0x20)
+
+#define CLOCK_MONOTONIC (1)
 
 static usize linux_syscall(
     enum linux_syscall_nr syscall_nr,
@@ -70,6 +73,27 @@ static usize linux_syscall(
 
 #define exit(code) \
     linux_syscall(LINUX_SYSCALL_NR_EXIT, code, 0, 0, 0, 0, 0)
+
+#define clock_gettime(clockid, tp) \
+    linux_syscall(LINUX_SYSCALL_NR_CLOCK_GETTIME, clockid, (usize)(tp), 0, 0, 0, 0)
+
+struct linux_timespec {
+    u64 secs;
+    u64 nsecs;
+};
+
+static f64 platform_ms_ticked(void)
+{
+    struct linux_timespec now = {0};
+    clock_gettime(CLOCK_MONOTONIC, &now);
+
+    // TODO(vak): This might be pretty inaccurate based on how long the system has been
+    // running for... It might be better to store the raw 128-bit time value, and then
+    // use another function to get the elapsed time to avoid floating point inaccuracies.
+
+    f64 system_ms_ticked = (now.secs*1000.0) + (now.nsecs * 1e-6);
+    return (system_ms_ticked);
+}
 
 static usize platform_write_stdout(void* data, usize size)
 {

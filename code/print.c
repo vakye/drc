@@ -11,6 +11,8 @@ static usize print_hex(usize value);
 static usize print_usize(usize value);
 static usize print_ssize(ssize value);
 
+static usize print_f64(f64 value);
+
 typedef usize print_write_out(void* data, usize size);
 
 struct print_context {
@@ -112,6 +114,37 @@ static usize print_ssize(ssize value)
     }
 
     written += print_usize(value);
+
+    return (written);
+}
+
+static usize print_f64(f64 value)
+{
+    usize written = 0;
+
+    // NOTE(vak): Very inaccurate and barebones floating point printing that doesn't
+    // support special values (NaN, INF, ...)
+
+    if (value < 0)
+    {
+        written += print_char('-');
+        value = -value;
+    }
+
+    usize integer_part = (usize)value;
+    f64   decimal_part = value - (f64)integer_part;
+
+    written += print_usize(integer_part);
+    written += print_char('.');
+
+    for (usize index = 0; index < 3; index++)
+    {
+        decimal_part *= 10.0;
+        usize digit = (usize)(decimal_part);
+        decimal_part -= digit;
+
+        written += print_usize(digit);
+    }
 
     return (written);
 }
